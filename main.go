@@ -10,10 +10,44 @@ import (
 
 // custom type to make it easier to read when we are referencing specifically a piece of the piece table
 type piece []byte
+type lineBuf map[int64]piece
 
 func checkErr(e error) {
 	if e != nil {
 		log.Fatal(e)
+	}
+}
+
+func drawBuf(b *lineBuf) {
+	for i := 0; i < len(*b); i++ {
+		fmt.Printf("%d\t%s\n", i, (*b)[int64(i)])
+	}
+}
+
+func drawLine(b *lineBuf, l int64) {
+	fmt.Printf("%d\t%s\n", l, (*b)[l])
+}
+
+func drawRange(b *lineBuf, r [2]int64) {}
+
+func handleCommand(c []byte, b *lineBuf) bool {
+	switch c[0] {
+	case 112:
+		drawBuf(b)
+		return false
+	case 113:
+		fmt.Println("exiting...")
+		return true
+	case 80:
+		// we will need to error check this at some point.
+		// this could start showing some value in having
+		// a lineBuf struct that contains information we
+		// can use to error check
+		drawLine(b, int64(c[1]))
+		return false
+	default:
+		fmt.Println("unknowm command. press h for help.")
+		return false
 	}
 }
 
@@ -41,7 +75,8 @@ func main() {
 	var i int64
 	a := os.Args[1:]
 	var s *bufio.Scanner
-	pt := make(map[int64]piece)
+	var pt lineBuf = make(map[int64]piece)
+	in := bufio.NewScanner(os.Stdin)
 
 	if len(a) <= 0 {
 		// eventually we will want this to create an unnamed file and still open a buffer
@@ -72,8 +107,15 @@ func main() {
 	}
 	checkErr(s.Err())
 
-	for j := 0; j <= len(pt); j++ {
-		fmt.Printf("line %d, data %s\n", j, pt[int64(j)])
+	drawBuf(&pt)
+
+	fmt.Printf("sediting file: %s, enter command:\n", a[0])
+
+	for {
+		in.Scan()
+		if handleCommand([]byte(in.Text()), &pt) {
+			break
+		}
 	}
 
 	e = f.Close()
