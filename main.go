@@ -18,39 +18,6 @@ func checkErr(e error) {
 	}
 }
 
-func drawBuf(b *lineBuf) {
-	for i := 0; i < len(*b); i++ {
-		fmt.Printf("%d\t%s\n", i, (*b)[int64(i)])
-	}
-}
-
-func drawLine(b *lineBuf, l int64) {
-	fmt.Printf("%d\t%s\n", l, (*b)[l])
-}
-
-func drawRange(b *lineBuf, r [2]int64) {}
-
-func handleCommand(c []byte, b *lineBuf) bool {
-	switch c[0] {
-	case 112:
-		drawBuf(b)
-		return false
-	case 113:
-		fmt.Println("exiting...")
-		return true
-	case 80:
-		// we will need to error check this at some point.
-		// this could start showing some value in having
-		// a lineBuf struct that contains information we
-		// can use to error check
-		drawLine(b, int64(c[1]))
-		return false
-	default:
-		fmt.Println("unknowm command. press h for help.")
-		return false
-	}
-}
-
 /*
 gap buffers - all text for the current piece is loaded into a buffer, and a gap is inserted at the point in the buffer where the editing cursor should start.
 as the cursor is moved, data is moved in the buffer relative to the direction of the cursors movement, essentialy causing the gap to "follow" the
@@ -63,6 +30,12 @@ is found. once one is found, we create the next piece of data, and repeat until 
 them on the screen. as we move from line to line, the gap buffer is loaded with a copy of the data from the current line in the piece table, and we redraw the
 screen with the copied data. the screen will then reflect the edited data from the buffer. on write, we swap back to displaying the piece table data after we
 re-read the file.
+
+double buffer display - two buffers to allow for smooth redrawing. [width][height]display or somthing like that. each time the user enters input we update
+the back buffer and then copy differences to the front buffer to smoothly update the display.
+
+moving the cursor - when the user enters input, we also need to move the cursor and redraw the double buffer to reflect changes.
+long term efficiency gains here could be from only redrawing the buffer when the cursor moves enough to cause a new line to need to be drawn.
 
 */
 
@@ -107,15 +80,11 @@ func main() {
 	}
 	checkErr(s.Err())
 
-	drawBuf(&pt)
-
 	fmt.Printf("sediting file: %s, enter command:\n", a[0])
 
 	for {
 		in.Scan()
-		if handleCommand([]byte(in.Text()), &pt) {
-			break
-		}
+		break
 	}
 
 	e = f.Close()
