@@ -6,11 +6,31 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
-// custom type to make it easier to read when we are referencing specifically a piece of the piece table
-type piece []byte
-type lineBuf map[int64]piece
+type lineBuf map[int64][]byte
+
+type DisplayBuf struct {
+	FrontBuf [][]int64
+	BackBuf  [][]int64
+}
+
+func NewDisplayBuf(tfd int) *DisplayBuf {
+	w, h, e := term.GetSize(tfd)
+	var b [][]int64
+	checkErr(e)
+	b = make([][]int64, h)
+	for i := range b {
+		b[i] = make([]int64, w)
+	}
+
+	return &DisplayBuf{
+		FrontBuf: b,
+		BackBuf:  b,
+	}
+}
 
 func checkErr(e error) {
 	if e != nil {
@@ -48,8 +68,19 @@ func main() {
 	var i int64
 	a := os.Args[1:]
 	var s *bufio.Scanner
-	var pt lineBuf = make(map[int64]piece)
+	var pt lineBuf = make(map[int64][]byte)
 	in := bufio.NewScanner(os.Stdin)
+	tfd := int(os.Stdout.Fd())
+	var dp *DisplayBuf
+
+	// make sure we are running in a terminal
+	if !term.IsTerminal(tfd) {
+		fmt.Println("not running in a terminal!")
+		return
+	}
+
+	dp = NewDisplayBuf(tfd)
+	fmt.Printf("h: %d\nw: %d\n", len(dp.FrontBuf), len(dp.FrontBuf[0]))
 
 	if len(a) <= 0 {
 		// eventually we will want this to create an unnamed file and still open a buffer
@@ -79,8 +110,6 @@ func main() {
 		i++
 	}
 	checkErr(s.Err())
-
-	fmt.Printf("sediting file: %s, enter command:\n", a[0])
 
 	for {
 		in.Scan()
