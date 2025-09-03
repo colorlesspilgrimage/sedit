@@ -12,23 +12,75 @@ import (
 
 type lineBuf map[int64][]byte
 
+const FrontBuf = true
+const BackBuf = false
+
 type DisplayBuf struct {
-	FrontBuf [][]int64
-	BackBuf  [][]int64
+	FrontBuf [][]byte
+	BackBuf  [][]byte
+	Height   int
+	Width    int
 }
 
 func NewDisplayBuf(tfd int) *DisplayBuf {
 	w, h, e := term.GetSize(tfd)
-	var b [][]int64
+	var b [][]byte
 	checkErr(e)
-	b = make([][]int64, h)
+	b = make([][]byte, h)
 	for i := range b {
-		b[i] = make([]int64, w)
+		b[i] = make([]byte, w)
 	}
 
 	return &DisplayBuf{
 		FrontBuf: b,
 		BackBuf:  b,
+		Height:   h,
+		Width:    w,
+	}
+}
+
+// when we load the buffer, we actually want to load the total amount of data from the file read in.
+// currently this only loads what can be seen on the display when the program is run.
+// this will also require some changes to our creation function, as it will also need to know the size of the file its working with
+// in order to inform what we need to size the buffer to. there is some question in my mind as to how big the buffers need to be though -
+// there is no need for the w & h slices of the buffer to each be big enough to store the entire file.
+func (db *DisplayBuf) LoadBuf(b *[]byte, w bool) {
+	switch w {
+	case true:
+		for i := 0; i < db.Height; i++ {
+			for j := 0; (j < db.Width) && (j < len(*b)); j++ {
+				db.FrontBuf[i][j] = (*b)[j]
+			}
+		}
+	case false:
+		for i := 0; i < db.Height; i++ {
+			for j := 0; (j < db.Width) && (j < len(*b)); j++ {
+				db.BackBuf[i][j] = (*b)[j]
+			}
+		}
+	}
+
+}
+
+func (db *DisplayBuf) InitBuf(b *[]byte) {
+	db.LoadBuf(b, FrontBuf)
+	db.LoadBuf(b, BackBuf)
+}
+
+func (db *DisplayBuf) DrawBuf(w bool) {
+	switch w {
+	case true:
+		for i := 0; i < db.Height; i++ {
+			for j := 0; j < db.Width; j++ {
+				fmt.Printf("%c", db.FrontBuf[i][j])
+			}
+		}
+	case false:
+		for i := 0; i < db.Height; i++ {
+			for j := 0; j < db.Width; j++ {
+				fmt.Printf("%c", db.FrontBuf[i][j])
+			}
+		}
 	}
 }
 
@@ -64,7 +116,6 @@ func main() {
 	var e error
 	var f *os.File
 	var c []byte
-	var l int64
 	var i int64
 	a := os.Args[1:]
 	var s *bufio.Scanner
@@ -94,13 +145,11 @@ func main() {
 	f, e = os.OpenFile(a[0], os.O_RDWR|os.O_CREATE, 0644)
 	checkErr(e)
 
-	l = (func() int64 {
+	c = make([]byte, func() int {
 		s, e := f.Stat()
 		checkErr(e)
-		return s.Size()
-	})()
-
-	c = make([]byte, l)
+		return int(s.Size())
+	}())
 	_, e = f.Read(c)
 	checkErr(e)
 
@@ -110,6 +159,9 @@ func main() {
 		i++
 	}
 	checkErr(s.Err())
+
+	dp.InitBuf(&c)
+	dp.DrawBuf(FrontBuf)
 
 	for {
 		in.Scan()
