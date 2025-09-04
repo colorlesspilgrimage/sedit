@@ -3,9 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"strings"
 
 	"golang.org/x/term"
 )
@@ -22,13 +22,39 @@ type DisplayBuf struct {
 	Width    int
 }
 
-func NewDisplayBuf(tfd int) *DisplayBuf {
+func NewDisplayBuf(tfd int, f *os.File) *DisplayBuf {
 	w, h, e := term.GetSize(tfd)
+	s := bufio.NewScanner(f)
+	l := 0
+	ll := 0
 	var b [][]byte
+
 	checkErr(e)
-	b = make([][]byte, h)
+
+	for s.Scan() {
+		l++
+	}
+
+	checkErr(s.Err())
+
+	_, e = f.Seek(0, io.SeekStart)
+	s = bufio.NewScanner(f)
+
+	for s.Scan() {
+		ln := s.Text()
+		if len(ln) > ll {
+			ll = len(ln)
+		}
+	}
+
+	checkErr(s.Err())
+
+	_, e = f.Seek(0, io.SeekStart)
+	checkErr(e)
+
+	b = make([][]byte, l)
 	for i := range b {
-		b[i] = make([]byte, w)
+		b[i] = make([]byte, ll)
 	}
 
 	return &DisplayBuf{
@@ -41,12 +67,15 @@ func NewDisplayBuf(tfd int) *DisplayBuf {
 
 // when we load the buffer, we actually want to load the total amount of data from the file read in.
 // currently this only loads what can be seen on the display when the program is run.
+// we only care about the width and height when we talk about drawing the buffer
 // this will also require some changes to our creation function, as it will also need to know the size of the file its working with
 // in order to inform what we need to size the buffer to. there is some question in my mind as to how big the buffers need to be though -
 // there is no need for the w & h slices of the buffer to each be big enough to store the entire file.
 func (db *DisplayBuf) LoadBuf(b *[]byte, w bool) {
 	switch w {
 	case true:
+		// these functions cause a panic due to OOB access, probably because we are not checking that the height is also less than the maximum lines we
+		// allocate against.
 		for i := 0; i < db.Height; i++ {
 			for j := 0; (j < db.Width) && (j < len(*b)); j++ {
 				db.FrontBuf[i][j] = (*b)[j]
@@ -62,9 +91,18 @@ func (db *DisplayBuf) LoadBuf(b *[]byte, w bool) {
 
 }
 
-func (db *DisplayBuf) InitBuf(b *[]byte) {
-	db.LoadBuf(b, FrontBuf)
-	db.LoadBuf(b, BackBuf)
+func (db *DisplayBuf) InitBuf(f *os.File) {
+	b := make([]byte, func() int {
+		s, e := f.Stat()
+		checkErr(e)
+		return int(s.Size())
+	}())
+
+	_, e := f.Read(b)
+	checkErr(e)
+
+	db.LoadBuf(&b, FrontBuf)
+	db.LoadBuf(&b, BackBuf)
 }
 
 func (db *DisplayBuf) DrawBuf(w bool) {
@@ -115,23 +153,16 @@ func main() {
 
 	var e error
 	var f *os.File
-	var c []byte
-	var i int64
 	a := os.Args[1:]
-	var s *bufio.Scanner
-	var pt lineBuf = make(map[int64][]byte)
 	in := bufio.NewScanner(os.Stdin)
 	tfd := int(os.Stdout.Fd())
-	var dp *DisplayBuf
+	var db *DisplayBuf
 
 	// make sure we are running in a terminal
 	if !term.IsTerminal(tfd) {
 		fmt.Println("not running in a terminal!")
 		return
 	}
-
-	dp = NewDisplayBuf(tfd)
-	fmt.Printf("h: %d\nw: %d\n", len(dp.FrontBuf), len(dp.FrontBuf[0]))
 
 	if len(a) <= 0 {
 		// eventually we will want this to create an unnamed file and still open a buffer
@@ -143,31 +174,16 @@ func main() {
 	}
 
 	f, e = os.OpenFile(a[0], os.O_RDWR|os.O_CREATE, 0644)
+	defer f.Close()
 	checkErr(e)
 
-	c = make([]byte, func() int {
-		s, e := f.Stat()
-		checkErr(e)
-		return int(s.Size())
-	}())
-	_, e = f.Read(c)
-	checkErr(e)
+	db = NewDisplayBuf(tfd, f)
 
-	s = bufio.NewScanner(strings.NewReader(string(c)))
-	for s.Scan() {
-		pt[i] = []byte(s.Text())
-		i++
-	}
-	checkErr(s.Err())
-
-	dp.InitBuf(&c)
-	dp.DrawBuf(FrontBuf)
+	db.InitBuf(f)
+	db.DrawBuf(FrontBuf)
 
 	for {
 		in.Scan()
 		break
 	}
-
-	e = f.Close()
-	checkErr(e)
 }
